@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iPhone Slots Demo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <style>
+        /* Custom scrollbar hide */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        /* Slot Reel Animation */
+        .reel-container {
+            overflow: hidden;
+            position: relative;
+            background: white;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.1);
+            border-radius: 12px;
+        }
+        
+        .reel-strip {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            transition: transform 0s; /* Controlled by JS */
+        }
+
+        .slot-item {
+            height: 100px;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 5px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .slot-item img {
+            max-height: 90%;
+            max-width: 90%;
+            object-fit: contain;
+            filter: drop-shadow(0 4px 6px rgba(0,0,0,0.1));
+        }
+
+        .blur-motion {
+            filter: blur(2px);
+        }
+        
+        .winning-pulse {
+            animation: pulse-border 1.5s infinite;
+        }
+
+        @keyframes pulse-border {
+            0% { box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(234, 179, 8, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(234, 179, 8, 0); }
+        }
+
+        /* Animation for Phone dropping into box */
+        /* Increased drop distance to 450px because box is lower */
+        @keyframes dropInBox {
+            0% { transform: translateY(0) scale(1); opacity: 1; }
+            80% { opacity: 1; }
+            100% { transform: translateY(450px) scale(0.1); opacity: 0; }
+        }
+        .animate-drop {
+            animation: dropInBox 1.2s forwards ease-in;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 h-screen w-full flex items-center justify-center font-sans overflow-hidden">
+
+    <!-- Container: Square corners (rounded-none) -->
+    <div class="relative bg-slate-50 w-[393px] h-[852px] rounded-none shadow-2xl overflow-hidden flex flex-col border border-gray-700">
+        
+        <!-- Loading Screen (New) -->
+        <div id="loading-screen" class="absolute inset-0 bg-slate-50 z-[60] flex flex-col items-center justify-center transition-opacity duration-500">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-black mb-4"></div>
+            <p id="loading-text" class="text-gray-600 font-medium text-sm">Loading assets...</p>
+        </div>
+
+        <!-- Status Bar Removed -->
+        <div class="w-full h-8 bg-slate-50 z-20"></div>
+
+        <!-- App Content -->
+        <div id="game-screen" class="flex-1 flex flex-col px-4 pb-8 relative justify-center transition-opacity duration-500">
+            
+            <!-- Header -->
+            <div class="text-center mb-8">
+                <h1 class="text-3xl font-bold text-gray-800 tracking-tight">2026 </h1>
+                <h2 class="text-3xl font-bold text-gray-800 tracking-tight">Phone Bundle</h2>
+            </div>
+
+            <!-- Slot Machine Area (3x3 Grid) -->
+            <!-- Adjusted Height to 220px to show 60% Top, 100% Middle, 60% Bottom -->
+            <div class="bg-gray-200 p-4 rounded-3xl shadow-inner border border-gray-300 mb-8 relative">
+                <!-- Winning Line Indicator -->
+                <div class="absolute top-1/2 left-0 w-full h-[100px] -mt-[50px] border-y-4 border-yellow-500/50 bg-yellow-100/10 pointer-events-none z-10 hidden" id="win-line"></div>
+                <div class="absolute -right-3 top-1/2 transform -translate-y-1/2 z-20">
+                     <div class="w-0 h-0 border-t-[10px] border-t-transparent border-r-[15px] border-r-yellow-500 border-b-[10px] border-b-transparent"></div>
+                </div>
+                <div class="absolute -left-3 top-1/2 transform -translate-y-1/2 z-20">
+                    <div class="w-0 h-0 border-t-[10px] border-t-transparent border-l-[15px] border-l-yellow-500 border-b-[10px] border-b-transparent"></div>
+               </div>
+
+                <div class="grid grid-cols-3 gap-2 h-[220px] overflow-hidden bg-white rounded-xl border border-gray-300 p-1">
+                    <!-- Reel 1 -->
+                    <div class="reel-container h-full relative">
+                        <div id="reel-1" class="reel-strip" style="transform: translateY(0px);">
+                            <!-- Items injected by JS -->
+                        </div>
+                    </div>
+                    <!-- Reel 2 -->
+                    <div class="reel-container h-full relative">
+                        <div id="reel-2" class="reel-strip" style="transform: translateY(0px);">
+                            <!-- Items injected by JS -->
+                        </div>
+                    </div>
+                    <!-- Reel 3 -->
+                    <div class="reel-container h-full relative">
+                        <div id="reel-3" class="reel-strip" style="transform: translateY(0px);">
+                            <!-- Items injected by JS -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Status Message -->
+            <div id="status-display" class="h-16 flex items-center justify-center text-center mb-4 px-2">
+                <p class="text-lg font-medium text-gray-600 transition-all duration-300">Press spin to win!</p>
+            </div>
+
+            <!-- Controls -->
+            <div class="mt-8 px-2">
+                <button id="spin-btn" class="w-full bg-black text-white py-5 rounded-2xl text-xl font-bold shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2 hover:bg-gray-900" disabled>
+                    <span>SPIN</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Animation / Form Overlay Screen -->
+        <div id="claim-screen" class="absolute inset-0 bg-slate-50 z-50 hidden flex-col items-center pt-10 px-6">
+            
+            <!-- Animation Stage (Full height to allow bottom positioning) -->
+            <div id="animation-stage" class="w-full flex-1 relative flex flex-col items-center">
+                <h2 class="text-2xl font-bold text-gray-800 mt-10">Packing your prize...</h2>
+                
+                <!-- The Phone that will drop -->
+                <!-- Increased size w-60, positioned higher top-32 -->
+                <img id="anim-phone" src="" class="w-60 z-20 absolute top-32" />
+                
+                <!-- The Box -->
+                <!-- Positioned at the very bottom -->
+                <img src="https://i.postimg.cc/wMbyLJ1R/express-delivery-package-37571084.jpg" class="w-80 z-10 absolute bottom-10 object-contain" />
+            </div>
+
+            <!-- Form Stage (Initially Hidden) -->
+            <div id="form-stage" class="w-full hidden flex-col h-full pt-10">
+                <h2 class="text-2xl font-bold text-gray-800 mb-2">Shipping Details</h2>
+                <p class="text-gray-500 mb-6 text-sm">Where should we send your iPhone?</p>
+                
+                <form id="shipping-form" class="space-y-4 flex-1 flex flex-col">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-1 ml-1">Full Name</label>
+                        <input type="text" value="Sophie Stone" class="w-full bg-gray-100 border-0 rounded-xl p-4 text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none" readonly>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-1 ml-1">Email</label>
+                        <input type="email" value="sophie1998@icloud.com" class="w-full bg-gray-100 border-0 rounded-xl p-4 text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none" readonly>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-1 ml-1">Delivery Address</label>
+                        <textarea class="w-full bg-gray-100 border-0 rounded-xl p-4 text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none h-24 resize-none" readonly>1 Apple Park Way, Cupertino, CA 95014, United States</textarea>
+                    </div>
+
+                    <div class="mt-auto pb-8">
+                        <button type="submit" class="w-full bg-blue-600 text-white py-4 rounded-2xl text-lg font-bold shadow-lg hover:bg-blue-700 active:scale-95 transition-transform">
+                            Send
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Timer Stage (Initially Hidden) -->
+            <div id="timer-stage" class="w-full hidden flex-col items-center justify-center h-full text-center pb-20">
+                <div class="mb-6 bg-blue-50 p-6 rounded-full">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-16 h-16 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m-4 0a2 2 0 114 0m6 0a2 2 0 104 0m-4 0a2 2 0 114 0" />
+                    </svg>
+                </div>
+                <h2 class="text-xl font-bold text-gray-800 mb-2">Delivery expected in:</h2>
+                <div id="timer-display" class="text-5xl font-mono font-bold text-gray-900 tracking-wider my-4">02:00:00</div>
+                <p class="text-sm text-gray-500 px-4">Your iPhone 17 Pro Max is on the way! Please keep your phone line open.</p>
+            </div>
+
+        </div>
+
+        <!-- Home Indicator -->
+        <div class="absolute bottom-2 left-1/2 transform -translate-x-1/2 w-32 h-1 bg-black rounded-full z-20"></div>
+    </div>
+
+    <script>
+        // 1. DATA CONFIGURATION
+        const customImageMap = {
+            // Winners (iPhone 17 Pro Max)
+            '17pm_co': 'https://yabloki.ua/media/cache/sylius_shop_product_original/26/40/iphone-17-pro-max-256-gb-orange-now-1.png.webp', // Cosmic Orange
+            '17pm_sv': 'https://yabloki.ua/media/cache/sylius_shop_product_original/21/9b/iphone-17-pro-max-256-gb-white-now-1.png.webp', // Silver
+            '17pm_db': 'https://yabloki.ua/media/cache/sylius_shop_product_original/e2/4c/iphone-17-pro-max-256-gb-navy-now-1.png.webp', // Deep Blue
+            
+            // Fillers/Losers
+            '17pl_cw': 'https://yabloki.ua/media/cache/sylius_shop_product_original/fe/6c/iphone-17-air-256-gb-white-silver-now-3.png.webp',
+            '17pl_sb': 'https://yabloki.ua/media/cache/sylius_shop_product_original/67/19/iphone-17-air-256-gb-black-now-3.png.webp',
+            '17pl_skyblue': 'https://yabloki.ua/media/cache/sylius_shop_product_original/fd/75/iphone-17-air-256-gb-sky-blue-now-3.png.webp',
+            '17pl_lg': 'https://yabloki.ua/media/cache/sylius_shop_product_original/ab/3e/iphone-17-air-256-gb-dark-titanium-now-3.png.webp',
+            '17_pk': 'https://yabloki.ua/media/cache/sylius_shop_product_original/4b/7d/iphone-17-256-gb-purple-now-3.png.webp',
+            '16pm_dt': 'https://yabloki.ua/media/cache/sylius_shop_product_original/f7/50/iphone-16-pro-max-256gb-desert-titanium-e-sim_f35ec104-d4b8-4ba0-a577-8be8cc2b0495-5.png.webp',
+            '16p_wt': 'https://yabloki.ua/media/cache/sylius_shop_product_original/fa/f1/iphone-16-pro-max-256-gb-white-titanium-5.png.webp',
+            '16pl_um': 'https://yabloki.ua/media/cache/sylius_shop_product_original/43/be/iphone-16-plus-128-gb-blue-5.png.webp',
+            '16pl_tl': 'https://yabloki.ua/media/cache/sylius_shop_product_original/ff/51/iphone-16-plus-128-gb-green-5.png.webp',
+            '16pl_pk': 'https://yabloki.ua/media/cache/sylius_shop_product_original/e7/98/iphone-16-plus-128-gb-pink-5.png.webp',
+            '16pl_wh': 'https://yabloki.ua/media/cache/sylius_shop_product_original/0b/a5/iphone-16-plus-128-gb-starlight-5.png.webp',
+            '16pl_bk': 'https://yabloki.ua/media/cache/sylius_shop_product_original/bb/48/iphone-16-plus-128-gb-black-5.png.webp',
+            '16_tl': 'https://yabloki.ua/media/cache/sylius_shop_product_original/38/f1/iphone-16-128-gb-green-5.png.webp',
+            '15pm_nt': 'https://yabloki.ua/media/cache/sylius_shop_product_original/5d/96/iphone-15-pro-max-deep-purple-512-mb-1.png.webp',
+            '15pm_blt': 'https://yabloki.ua/media/cache/sylius_shop_product_original/98/69/iphone-15-pro-max-gold-256-gb-1.png.webp',
+            '15pm_wt': 'https://yabloki.ua/media/cache/sylius_shop_product_original/32/e1/iphone-15-pro-max-silver-256-gb-1.png.webp',
+            '15pm_btk': 'https://yabloki.ua/media/cache/sylius_shop_product_original/e6/91/iphone-15-pro-max-256gb-black-titanium-dual-sim-1.png.webp',
+            '15p_btk': 'https://yabloki.ua/media/cache/sylius_shop_product_original/e6/91/iphone-15-pro-max-256gb-black-titanium-dual-sim-1.png.webp',
+            '15pl_yl': 'https://yabloki.ua/media/cache/sylius_shop_product_original/68/8d/iphone-15-plus-256gb-yellow-e-sim_3f2378d0-5a12-4de0-b9e8-95805cd9e694-1.png.webp',
+            '15_bl': 'https://yabloki.ua/media/cache/sylius_shop_product_original/12/5b/iphone-15-blue-128-mb-1.png.webp',
+            '14pm_dp': 'https://yabloki.ua/media/cache/sylius_shop_product_original/37/a4/iphone-14-pro-max-deep-purple-512gb-1.png.webp',
+            '14p_sbk': 'https://yabloki.ua/media/cache/sylius_shop_product_original/bc/20/iphone-14-pro-space-black-512gb-1.png.webp',
+            '14pl_pr': 'https://yabloki.ua/media/cache/sylius_shop_product_original/d4/01/iphone-14-plus-purple-128gb-1.png.webp',
+            '14_mid': 'https://yabloki.ua/media/cache/sylius_shop_product_original/1c/e8/iphone-14-midnight-128gb-1.png.webp'
+        };
+
+        const ITEM_HEIGHT = 100; // Match CSS height
+        const CENTER_OFFSET_Y = 40; 
+        const allImages = Object.values(customImageMap);
+        
+        // 2. GAME STATE
+        let spinCount = 0;
+        let isSpinning = false;
+        let finalWinningImage = ''; // Store which image is used for the animation
+
+        // 3. INITIALIZATION (Modified for Preloading)
+        function preloadImages() {
+            const loadingScreen = document.getElementById('loading-screen');
+            const loadingText = document.getElementById('loading-text');
+            const startButton = document.getElementById('spin-btn');
+            
+            let loadedCount = 0;
+            const totalImages = allImages.length;
+            
+            // Function to handle load progress
+            const onImageLoaded = () => {
+                loadedCount++;
+                const percent = Math.floor((loadedCount / totalImages) * 100);
+                loadingText.innerText = `Loading assets... ${percent}%`;
+
+                if (loadedCount >= totalImages) {
+                    // All images loaded
+                    setTimeout(() => {
+                        loadingScreen.style.opacity = '0'; // Fade out
+                        setTimeout(() => {
+                            loadingScreen.style.display = 'none'; // Remove
+                            startButton.disabled = false; // Enable button
+                            initReels(); // Setup reels
+                        }, 500);
+                    }, 300);
+                }
+            };
+
+            // Start loading all images
+            allImages.forEach(src => {
+                const img = new Image();
+                img.onload = onImageLoaded;
+                img.onerror = onImageLoaded; // Count errors as loaded to not block app
+                img.src = src;
+            });
+        }
+
+        function initReels() {
+            [1, 2, 3].forEach(i => {
+                const reel = document.getElementById(`reel-${i}`);
+                let html = '';
+                // Since images are preloaded, they will show instantly
+                for(let j=0; j<3; j++) {
+                    const randomImg = allImages[Math.floor(Math.random() * allImages.length)];
+                    html += `<div class="slot-item"><img src="${randomImg}" alt="iphone"></div>`;
+                }
+                reel.innerHTML = html;
+                reel.style.transform = `translateY(-${CENTER_OFFSET_Y}px)`;
+            });
+        }
+
+        // 4. SPIN LOGIC
+        document.getElementById('spin-btn').addEventListener('click', () => {
+            if (isSpinning) return;
+            startSpin();
+        });
+
+        async function startSpin() {
+            isSpinning = true;
+            spinCount++;
+            const spinBtn = document.getElementById('spin-btn');
+            const statusDisplay = document.getElementById('status-display');
+            const winLine = document.getElementById('win-line');
+            
+            spinBtn.disabled = true;
+            spinBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            statusDisplay.innerHTML = '<p class="text-blue-500 font-bold animate-pulse">Spinning...</p>';
+            winLine.classList.add('hidden');
+
+            let outcome = [];
+            
+            if (spinCount === 1) {
+                // Fail 1
+                outcome = [allImages[0], allImages[5], allImages[10]];
+            } else if (spinCount === 2) {
+                // Fail 2
+                outcome = [customImageMap['15pm_nt'], customImageMap['15pm_nt'], customImageMap['14_mid']];
+            } else {
+                // Win 3: SAME Random 17 Pro Max Color for all 3
+                const winners = [
+                    customImageMap['17pm_co'], 
+                    customImageMap['17pm_sv'], 
+                    customImageMap['17pm_db']
+                ];
+                
+                // 1. Pick ONE random winning color
+                const selectedWinner = winners[Math.floor(Math.random() * winners.length)];
+                
+                // 2. Fill all 3 slots with THAT SAME image
+                outcome = [selectedWinner, selectedWinner, selectedWinner];
+                
+                // Set this image for the box animation
+                finalWinningImage = selectedWinner;
+            }
+
+            const promises = [
+                spinReel(1, outcome[0], 2000), 
+                spinReel(2, outcome[1], 2500), 
+                spinReel(3, outcome[2], 3000) 
+            ];
+
+            await Promise.all(promises);
+
+            if (spinCount >= 3) {
+                triggerWin();
+            } else {
+                statusDisplay.innerHTML = '<p class="text-gray-500">No luck. Try again!</p>';
+                spinBtn.disabled = false;
+                spinBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                isSpinning = false;
+            }
+        }
+
+        function spinReel(reelIndex, targetImage, duration) {
+            return new Promise(resolve => {
+                const reel = document.getElementById(`reel-${reelIndex}`);
+                
+                const currentHtml = reel.innerHTML;
+                let spinHtml = '';
+                const spinLength = 30;
+
+                for (let i = 0; i < spinLength; i++) {
+                    const randomImg = allImages[Math.floor(Math.random() * allImages.length)];
+                    spinHtml += `<div class="slot-item"><img src="${randomImg}" alt="iphone"></div>`;
+                }
+
+                const above = allImages[Math.floor(Math.random() * allImages.length)];
+                const below = allImages[Math.floor(Math.random() * allImages.length)];
+                
+                const finalHtml = `
+                    <div class="slot-item"><img src="${above}" alt="filler"></div>
+                    <div class="slot-item" data-target="true"><img src="${targetImage}" alt="TARGET"></div>
+                    <div class="slot-item"><img src="${below}" alt="filler"></div>
+                `;
+
+                reel.innerHTML = reel.innerHTML + spinHtml + finalHtml;
+                reel.classList.add('blur-motion');
+
+                const nodes = reel.querySelectorAll('.slot-item');
+                const targetIndex = nodes.length - 2; 
+                const targetPos = (targetIndex * ITEM_HEIGHT) - 60; 
+
+                void reel.offsetWidth;
+
+                reel.style.transition = `transform ${duration}ms cubic-bezier(0.25, 1, 0.5, 1)`;
+                reel.style.transform = `translateY(-${targetPos}px)`;
+
+                setTimeout(() => {
+                    reel.classList.remove('blur-motion');
+                    reel.style.transition = 'none';
+                    reel.innerHTML = finalHtml;
+                    reel.style.transform = `translateY(-${CENTER_OFFSET_Y}px)`;
+                    resolve();
+                }, duration);
+            });
+        }
+
+        function triggerWin() {
+            const statusDisplay = document.getElementById('status-display');
+            const winLine = document.getElementById('win-line');
+            const spinBtn = document.getElementById('spin-btn');
+
+            // Text changes
+            statusDisplay.innerHTML = `
+                <div class="flex flex-col items-center">
+                    <p class="text-yellow-600 font-bold text-xl uppercase tracking-wider">Woohoo!</p>
+                    <p class="text-sm text-gray-800">iPhone 17 Pro Max!</p>
+                </div>
+            `;
+            
+            winLine.classList.remove('hidden');
+
+            // Confetti
+            var duration = 5 * 1000;
+            var animationEnd = Date.now() + duration;
+            var defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 50 };
+
+            function randomInRange(min, max) { return Math.random() * (max - min) + min; }
+
+            var interval = setInterval(function() {
+              var timeLeft = animationEnd - Date.now();
+              if (timeLeft <= 0) return clearInterval(interval);
+              var particleCount = 50 * (timeLeft / duration);
+              confetti(Object.assign({}, defaults, { particleCount, origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 } }));
+              confetti(Object.assign({}, defaults, { particleCount, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 } }));
+            }, 250);
+
+            // Change button to Claim - REMOVED EMOJI, CHANGED TEXT
+            spinBtn.innerHTML = "CLAIM";
+            spinBtn.classList.remove('bg-black', 'hover:bg-gray-900', 'opacity-50', 'cursor-not-allowed');
+            spinBtn.classList.add('bg-yellow-500', 'hover:bg-yellow-600', 'winning-pulse');
+            spinBtn.disabled = false;
+            
+            spinBtn.onclick = handleClaim;
+        }
+
+        function handleClaim() {
+            const gameScreen = document.getElementById('game-screen');
+            const claimScreen = document.getElementById('claim-screen');
+            const animPhone = document.getElementById('anim-phone');
+            const animStage = document.getElementById('animation-stage');
+            const formStage = document.getElementById('form-stage');
+
+            // Set the winning phone image
+            animPhone.src = finalWinningImage;
+
+            // Show claim screen (overlay)
+            claimScreen.classList.remove('hidden');
+            claimScreen.classList.add('flex');
+
+            // Start Animation
+            setTimeout(() => {
+                animPhone.classList.add('animate-drop');
+            }, 500);
+
+            // After Animation, switch to form
+            setTimeout(() => {
+                animStage.style.display = 'none';
+                formStage.classList.remove('hidden');
+                formStage.classList.add('flex');
+            }, 1800);
+        }
+
+        // Form Submit Handler
+        document.getElementById('shipping-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const formStage = document.getElementById('form-stage');
+            const timerStage = document.getElementById('timer-stage');
+
+            formStage.style.display = 'none'; // Hide form
+            timerStage.classList.remove('hidden'); // Show timer
+            timerStage.classList.add('flex');
+
+            startTimer();
+        });
+
+        function startTimer() {
+             // 2 hours in seconds
+             let time = 2 * 60 * 60;
+             const display = document.getElementById('timer-display');
+
+             setInterval(() => {
+                 const hours = Math.floor(time / 3600);
+                 const minutes = Math.floor((time % 3600) / 60);
+                 const seconds = time % 60;
+
+                 display.textContent = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                 if (time > 0) time--;
+             }, 1000);
+        }
+
+        // Init - START WITH PRELOAD
+        preloadImages();
+
+    </script>
+</body>
+</html>
